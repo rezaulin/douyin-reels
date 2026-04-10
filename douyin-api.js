@@ -9,7 +9,6 @@
  */
 
 import puppeteer from 'puppeteer';
-import { executablePath } from 'puppeteer';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
@@ -18,13 +17,15 @@ const SEEKIN_URL = 'https://www.seekin.ai/douyin-downloader/';
 
 // ── Browser Config ──────────────────────────────────────
 const browserOpts = {
-  executablePath: executablePath('chrome'),
   headless: 'new',
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-gpu',
     '--disable-dev-shm-usage',
+    '--disable-extensions',
+    '--disable-software-rasterizer',
+    '--headless=new',
   ],
 };
 

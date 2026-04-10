@@ -10,20 +10,21 @@
  */
 
 import puppeteer from 'puppeteer';
-import { executablePath } from 'puppeteer';
 import axios from 'axios';
 import fs from 'fs';
 
 const SEEKIN_URL = 'https://www.seekin.ai/download-tiktok-no-watermark/';
 
 const browserOpts = {
-  executablePath: executablePath('chrome'),
   headless: 'new',
   args: [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-gpu',
     '--disable-dev-shm-usage',
+    '--disable-extensions',
+    '--disable-software-rasterizer',
+    '--headless=new',
   ],
 };
 

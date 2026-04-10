@@ -4,7 +4,6 @@
  */
 
 import puppeteer from 'puppeteer';
-import { executablePath } from 'puppeteer';
 import moment from 'moment';
 import delay from 'delay';
 import fs from 'fs-extra';
@@ -12,11 +11,16 @@ import path from 'path';
 
 // ── Browser Config ──────────────────────────────────────
 const browserOptions = {
-  executablePath: executablePath('chrome'),
-  headless: false,
+  headless: 'new',
   args: [
     '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-gpu',
+    '--disable-dev-shm-usage',
+    '--disable-extensions',
+    '--disable-software-rasterizer',
+    '--headless=new',
     '--mute-audio',
     '--disable-notifications',
     '--window-size=1280,900',
