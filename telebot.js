@@ -5,7 +5,7 @@
 
 import { DouyinDL } from './douyin-api.js';
 import { TikTokDL } from './tiktok-api.js';
-import { ReelsUpload } from './browserHandler.js';
+import { uploadVideo } from './fb-api.js';
 import TeleBot from 'telebot';
 import axios from 'axios';
 import path from 'path';
@@ -192,7 +192,7 @@ async function handleVideoUrl(msg, url) {
         data.hashtags?.length ? data.hashtags.map(h => `#${h}`).join(' ') : '',
       ].filter(Boolean).join('\n').substring(0, 2200);
 
-      const upload = await ReelsUpload(namafile, caption);
+      const upload = await uploadVideo(outputPath, '', caption);
 
       if (upload.status === 'success') {
         await bot.sendMessage(chatId, `🎉 ${upload.message}`, {
