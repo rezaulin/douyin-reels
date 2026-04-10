@@ -6,6 +6,7 @@
 import { DouyinDL } from './douyin-api.js';
 import { TikTokDL } from './tiktok-api.js';
 import { uploadVideo } from './fb-api.js';
+import { translateCaption } from './translate.js';
 import TeleBot from 'telebot';
 import axios from 'axios';
 import path from 'path';
@@ -169,12 +170,24 @@ async function handleVideoUrl(msg, url) {
 
     await downloadVideo(video, outputPath);
 
-    // 6. Kirim video ke Telegram
+    // 5b. Translate caption (China → English)
+    const originalCaption = [
+      data.description || '',
+      data.hashtags?.length ? data.hashtags.map(h => `#${h}`).join(' ') : '',
+    ].filter(Boolean).join(' ');
+
+    let translatedCaption = originalCaption;
+    if (originalCaption) {
+      await bot.sendMessage(chatId, '🌐 Translating caption...', {
+        replyToMessage: msg.message_id,
+      });
+      translatedCaption = await translateCaption(originalCaption, 'en');
+    }
+
+    // 6. Kirim video ke Telegram (dengan caption translate)
     await bot.sendVideo(chatId, outputPath, {
       caption: [
-        data.description || '',
-        '',
-        data.hashtags?.length ? data.hashtags.map(h => `#${h}`).join(' ') : '',
+        translatedCaption,
         data.author?.nickname ? `\nvia @${data.author.nickname}` : '',
       ].filter(Boolean).join('\n').substring(0, 1024),
       replyToMessage: msg.message_id,
@@ -186,13 +199,7 @@ async function handleVideoUrl(msg, url) {
         replyToMessage: msg.message_id,
       });
 
-      const caption = [
-        data.description || '',
-        '',
-        data.hashtags?.length ? data.hashtags.map(h => `#${h}`).join(' ') : '',
-      ].filter(Boolean).join('\n').substring(0, 2200);
-
-      const upload = await uploadVideo(outputPath, '', caption);
+      const upload = await uploadVideo(outputPath, '', translatedCaption);
 
       if (upload.status === 'success') {
         await bot.sendMessage(chatId, `🎉 ${upload.message}`, {

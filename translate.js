@@ -1,9 +1,9 @@
 /**
- * Auto-Translate Caption
- * Translate dari bahasa China/Inggris ke Indonesia
+ * Auto-Translate Caption & Hashtags
+ * Translate dari China → English
  * 
- * API: MyMemory (free, 5000 chars/hari, tanpa key)
- * Atau: Google Translate (free, tanpa key)
+ * API: Google Translate (free, tanpa key)
+ * Fallback: MyMemory (5000 chars/hari)
  */
 
 import axios from 'axios';
@@ -195,7 +195,7 @@ const HASHTAG_MAP = {
   '野生动物': '#wildlife',
   '野生动物零距离': '#wildlife',
   '青年创作者成长计划': '',
-  
+
   // General
   '搞笑': '#funny',
   '搞笑视频': '#funnyvideos',
@@ -217,9 +217,20 @@ const HASHTAG_MAP = {
   '情感': '#emotions',
   '故事': '#story',
   '历史': '#history',
-  
+
   // Douyin specific
   '抖音': '#douyin',
   '热门': '#trending',
   '推荐': '#recommended',
+
+  // Aquatic/Fishing
+  '水族': '#aquarium',
+  '鱼': '#fish',
+  '虾': '#shrimp',
+  '螃蟹': '#crab',
+  '钓鱼': '#fishing',
+  '龙虾': '#lobster',
+  '观赏鱼': '#tropicalfish',
+  '水草': '#aquascape',
+  '养鱼': '#fishkeeping',
 };
