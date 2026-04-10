@@ -198,7 +198,7 @@ function parseSeekinResponse(data, originalUrl) {
     return {
       status: 'success',
       result: {
-        type: result.images?.length ? 'image' : (result.type || 'video'),
+        type: uniqueVideos.length ? 'video' : (result.images?.length ? 'image' : (result.type || 'video')),
         id: result.aweme_id || result.id || '',
         description: title,
         video: uniqueVideos,
