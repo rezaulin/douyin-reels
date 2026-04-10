@@ -180,7 +180,17 @@ function parseSeekinResponse(data, originalUrl) {
     if (Array.isArray(result.urls)) videos.push(...result.urls);
 
     // Deduplicate & filter
-    const uniqueVideos = [...new Set(videos)].filter(v => v && typeof v === 'string' && v.startsWith('http'));
+    let uniqueVideos = [...new Set(videos)].filter(v => v && typeof v === 'string' && v.startsWith('http'));
+
+    // Urutkan: pilih kualitas terkecil dulu (download lebih cepat)
+    if (result.medias && Array.isArray(result.medias)) {
+      const sortedMedias = result.medias
+        .filter(m => m.url && m.fileSize)
+        .sort((a, b) => (a.fileSize || 0) - (b.fileSize || 0));
+      if (sortedMedias.length) {
+        uniqueVideos = [sortedMedias[0].url, ...uniqueVideos.filter(v => v !== sortedMedias[0].url)];
+      }
+    }
 
     // Cover
     const cover = result.imageUrl || result.video?.cover?.url_list?.[0] || result.cover || '';
@@ -328,24 +338,35 @@ export const DouyinDL = (url) => new Promise(async (resolve) => {
 });
 
 /**
- * Download video file ke local path
+ * Download video file ke local path (dengan retry & timeout lebih lama)
  */
-export const downloadVideo = async (url, outputPath) => {
-  const { data } = await axios({
-    url,
-    method: 'GET',
-    responseType: 'stream',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    },
-    timeout: 60000,
-  });
+export const downloadVideo = async (url, outputPath, retries = 3) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`[Download] Attempt ${attempt}/${retries}...`);
+      const { data } = await axios({
+        url,
+        method: 'GET',
+        responseType: 'stream',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://www.douyin.com/',
+        },
+        timeout: 180000, // 3 menit
+      });
 
-  const writer = fs.createWriteStream(outputPath);
-  data.pipe(writer);
+      const writer = fs.createWriteStream(outputPath);
+      data.pipe(writer);
 
-  return new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-  });
+      return new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+      });
+    } catch (err) {
+      console.log(`[Download] Attempt ${attempt} failed: ${err.message}`);
+      if (attempt === retries) throw err;
+      // Tunggu 3 detik sebelum retry
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
 };
