@@ -183,11 +183,18 @@ function parseSeekinResponse(data, originalUrl) {
     // Deduplicate & filter
     let uniqueVideos = [...new Set(videos)].filter(v => v && typeof v === 'string' && v.startsWith('http'));
 
-    // Urutkan: pilih kualitas terkecil dulu (download lebih cepat)
+    // Simpan semua kualitas untuk pilihan user
+    let availableFormats = [];
     if (result.medias && Array.isArray(result.medias)) {
-      const sortedMedias = result.medias
-        .filter(m => m.url && m.fileSize)
-        .sort((a, b) => (a.fileSize || 0) - (b.fileSize || 0));
+      availableFormats = result.medias
+        .filter(m => m.url)
+        .map(m => ({
+          url: m.url,
+          format: m.format || 'Unknown',
+          fileSize: m.fileSize || 0,
+        }));
+      // Urutkan: kualitas tertinggi dulu
+      const sortedMedias = [...availableFormats].sort((a, b) => (b.fileSize || 0) - (a.fileSize || 0));
       if (sortedMedias.length) {
         uniqueVideos = [sortedMedias[0].url, ...uniqueVideos.filter(v => v !== sortedMedias[0].url)];
       }
@@ -224,6 +231,7 @@ function parseSeekinResponse(data, originalUrl) {
           title: result.music?.title || '',
           author: result.music?.author || '',
         },
+        availableFormats: availableFormats,
       },
     };
   } catch (err) {

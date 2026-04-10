@@ -3,7 +3,7 @@
  * Terima URL Douyin via Telegram, download & upload ke FB Reels
  */
 
-import { DouyinDL } from './douyin-api.js';
+import { DouyinDL, downloadVideo } from './douyin-api.js';
 import { TikTokDL } from './tiktok-api.js';
 import { uploadVideo } from './fb-api.js';
 import { translateCaption } from './translate.js';
@@ -24,6 +24,9 @@ const bot = new TeleBot({
 const userStats = new Map();
 const MAX_DOWNLOADS_PER_DAY = 10;
 
+// Simpan data video sementara untuk pilihan kualitas
+const pendingDownloads = new Map();
+
 function updateUserStats(userId) {
   const today = new Date().toDateString();
   if (!userStats.has(userId)) {
@@ -42,29 +45,6 @@ function updateUserStats(userId) {
 function canUserDownload(userId) {
   const stats = userStats.get(userId);
   return !stats || stats.count < MAX_DOWNLOADS_PER_DAY;
-}
-
-// ── Download Video ──────────────────────────────────────
-
-async function downloadVideo(url, outputPath) {
-  const { data } = await axios({
-    url,
-    method: 'GET',
-    responseType: 'stream',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)',
-      'Referer': 'https://www.douyin.com/',
-    },
-    timeout: 60000,
-  });
-
-  const writer = fs.createWriteStream(outputPath);
-  data.pipe(writer);
-
-  return new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-  });
 }
 
 // ── Detect Platform ─────────────────────────────────────
@@ -140,21 +120,83 @@ async function handleVideoUrl(msg, url) {
       `📝 Caption: ${(data.description || '-').substring(0, 100)}`,
     ].join('\n');
 
-    await bot.sendMessage(chatId, info, { replyToMessage: msg.message_id });
+    // 4. Tampilkan pilihan kualitas
+    const formats = data.availableFormats || [];
 
-    // 4. Cek durasi
+    if (formats.length > 1) {
+      // Ada multiple kualitas → tampilkan pilihan
+      let qualityInfo = info + '\n\n📺 Pilih kualitas video:';
+
+      const buttons = formats.map((f, i) => {
+        const sizeMB = f.fileSize ? (f.fileSize / 1024 / 1024).toFixed(1) : '?';
+        return bot.inlineButton(`${f.format} (${sizeMB}MB)`, { callback: `quality:${data.id}:${i}` });
+      });
+
+      // Arrange buttons in rows of 2
+      const keyboard = bot.inlineKeyboard(
+        buttons.reduce((rows, btn, i) => {
+          if (i % 2 === 0) rows.push([btn]);
+          else rows[rows.length - 1].push(btn);
+          return rows;
+        }, [])
+      );
+
+      // Simpan data untuk callback
+      pendingDownloads.set(data.id, {
+        data,
+        url,
+        platform,
+        userId,
+        chatId,
+        msgId: msg.message_id,
+        formats,
+      });
+
+      // Auto-cleanup setelah 5 menit
+      setTimeout(() => pendingDownloads.delete(data.id), 300000);
+
+      return bot.sendMessage(chatId, qualityInfo, {
+        replyToMessage: msg.message_id,
+        replyMarkup: keyboard,
+      });
+    }
+
+    // Hanya 1 kualitas → langsung download
+    await bot.sendMessage(chatId, info, { replyToMessage: msg.message_id });
+    await processDownload(bot, chatId, msg.message_id, {
+      data,
+      url,
+      platform,
+      userId,
+      selectedUrl: data.video?.[0],
+      selectedFormat: formats[0]?.format || 'Default',
+    });
+
+  } catch (err) {
+    console.error('Error:', err.message);
+    await bot.sendMessage(chatId, `💥 Error: ${err.message}`, {
+      replyToMessage: msg.message_id,
+    });
+  }
+}
+
+// ── Process Download (setelah user pilih kualitas) ────
+
+async function processDownload(bot, chatId, msgId, opts) {
+  const { data, selectedUrl, selectedFormat, userId } = opts;
+
+  try {
+    // Cek durasi
     if (data.duration > 90) {
       await bot.sendMessage(chatId,
-        `⚠️ Video ${data.duration}s melebihi batas FB Reels (90s).\nTetap download? (hanya download, tidak upload)`,
-        { replyToMessage: msg.message_id }
+        `⚠️ Video ${data.duration}s melebihi batas FB Reels (90s).\nHanya download, tidak upload ke Facebook.`,
+        { replyToMessage: msgId }
       );
     }
 
-    // 5. Download
-    const video = data.video?.[0];
-    if (!video) {
+    if (!selectedUrl) {
       return bot.sendMessage(chatId, '❌ Tidak ada URL video.', {
-        replyToMessage: msg.message_id,
+        replyToMessage: msgId,
       });
     }
 
@@ -164,13 +206,13 @@ async function handleVideoUrl(msg, url) {
 
     if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
 
-    await bot.sendMessage(chatId, '⬇️ Downloading video...', {
-      replyToMessage: msg.message_id,
+    await bot.sendMessage(chatId, `⬇️ Downloading ${selectedFormat}...`, {
+      replyToMessage: msgId,
     });
 
-    await downloadVideo(video, outputPath);
+    await downloadVideo(selectedUrl, outputPath);
 
-    // 5b. Translate caption (China → English)
+    // Translate caption (China → English)
     const originalCaption = [
       data.description || '',
       data.hashtags?.length ? data.hashtags.map(h => `#${h}`).join(' ') : '',
@@ -179,48 +221,101 @@ async function handleVideoUrl(msg, url) {
     let translatedCaption = originalCaption;
     if (originalCaption) {
       await bot.sendMessage(chatId, '🌐 Translating caption...', {
-        replyToMessage: msg.message_id,
+        replyToMessage: msgId,
       });
       translatedCaption = await translateCaption(originalCaption, 'en');
     }
 
-    // 6. Kirim video ke Telegram (dengan caption translate)
+    // Kirim video ke Telegram (dengan caption translate)
     await bot.sendVideo(chatId, outputPath, {
       caption: [
         translatedCaption,
         data.author?.nickname ? `\nvia @${data.author.nickname}` : '',
       ].filter(Boolean).join('\n').substring(0, 1024),
-      replyToMessage: msg.message_id,
+      replyToMessage: msgId,
     });
 
-    // 7. Upload ke Reels (jika durasi <= 90s)
+    // Upload ke Reels (jika durasi <= 90s)
     if (data.duration <= 90) {
       await bot.sendMessage(chatId, '📤 Mengupload ke Facebook Reels...', {
-        replyToMessage: msg.message_id,
+        replyToMessage: msgId,
       });
 
       const upload = await uploadVideo(outputPath, '', translatedCaption);
 
       if (upload.status === 'success') {
         await bot.sendMessage(chatId, `🎉 ${upload.message}`, {
-          replyToMessage: msg.message_id,
+          replyToMessage: msgId,
         });
       } else {
         await bot.sendMessage(chatId, `⚠️ Upload Reels gagal: ${upload.message}`, {
-          replyToMessage: msg.message_id,
+          replyToMessage: msgId,
         });
       }
     }
 
-    updateUserStats(userId);
+    if (userId) updateUserStats(userId);
 
   } catch (err) {
-    console.error('Error:', err.message);
+    console.error('Download Error:', err.message);
     await bot.sendMessage(chatId, `💥 Error: ${err.message}`, {
-      replyToMessage: msg.message_id,
+      replyToMessage: msgId,
     });
   }
 }
+
+// ── Callback: Pilihan Kualitas ─────────────────────────
+
+bot.on('callbackQuery', async (msg) => {
+  const data = msg.data; // format: quality:VIDEOID:INDEX
+  if (!data || !data.startsWith('quality:')) return;
+
+  const parts = data.split(':');
+  const formatIndex = parseInt(parts.pop()); // last part is index
+  const videoId = parts.slice(1).join(':'); // middle part is video ID
+
+  const pending = pendingDownloads.get(videoId);
+  if (!pending) {
+    return bot.answerCallbackQuery(msg.id, {
+      text: '⏰ Session expired. Kirim URL lagi.',
+      showAlert: true,
+    });
+  }
+
+  const format = pending.formats[formatIndex];
+  if (!format) {
+    return bot.answerCallbackQuery(msg.id, {
+      text: '❌ Kualitas tidak ditemukan.',
+      showAlert: true,
+    });
+  }
+
+  // Hapus dari pending
+  pendingDownloads.delete(videoId);
+
+  // Konfirmasi pilihan
+  await bot.answerCallbackQuery(msg.id, {
+    text: `✅ Dipilih: ${format.format}`,
+  });
+
+  // Edit pesan untuk hapus button
+  try {
+    await bot.editMessageReplyMarkup({
+      chatId: pending.chatId,
+      messageId: msg.message.message_id,
+    }, bot.inlineKeyboard([]));
+  } catch {}
+
+  // Proses download
+  await processDownload(bot, pending.chatId, pending.msgId, {
+    data: pending.data,
+    url: pending.url,
+    platform: pending.platform,
+    userId: pending.userId,
+    selectedUrl: format.url,
+    selectedFormat: format.format,
+  });
+});
 
 // ── Bot Commands ────────────────────────────────────────
 
