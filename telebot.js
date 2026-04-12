@@ -5,6 +5,7 @@
 
 import { DouyinDL, downloadVideo } from './douyin-api.js';
 import { TikTokDL } from './tiktok-api.js';
+import { InstagramDL } from './instagram-api.js';
 import { uploadVideo } from './fb-api.js';
 import { translateCaption } from './translate.js';
 import TeleBot from 'telebot';
@@ -54,6 +55,7 @@ function detectPlatform(url) {
   url = url.trim().toLowerCase();
   if (url.includes('douyin.com') || url.includes('v.douyin.com')) return 'douyin';
   if (url.includes('tiktok.com') || url.includes('vt.tiktok.com') || url.includes('vm.tiktok.com')) return 'tiktok';
+  if (url.includes('instagram.com') || url.includes('instagr.am')) return 'instagram';
   return null;
 }
 
@@ -73,12 +75,13 @@ async function handleVideoUrl(msg, url) {
 
   const platform = detectPlatform(url);
   if (!platform) {
-    return bot.sendMessage(chatId, '❌ URL tidak didukung. Kirim URL Douyin atau TikTok.', {
+    return bot.sendMessage(chatId, '❌ URL tidak didukung. Kirim URL Douyin, TikTok, atau Instagram.', {
       replyToMessage: msg.message_id,
     });
   }
 
-  const platformName = platform === 'douyin' ? 'Douyin' : 'TikTok';
+  const platformNames = { douyin: 'Douyin', tiktok: 'TikTok', instagram: 'Instagram' };
+  const platformName = platformNames[platform] || platform;
 
   try {
     // 1. Processing
@@ -90,8 +93,10 @@ async function handleVideoUrl(msg, url) {
     let result;
     if (platform === 'douyin') {
       result = await DouyinDL(url);
-    } else {
+    } else if (platform === 'tiktok') {
       result = await TikTokDL(url);
+    } else if (platform === 'instagram') {
+      result = await InstagramDL(url);
     }
 
     if (result.status === 'error') {
@@ -163,6 +168,17 @@ async function handleVideoUrl(msg, url) {
 
     // Hanya 1 kualitas → langsung download
     await bot.sendMessage(chatId, info, { replyToMessage: msg.message_id });
+    
+    // Instagram: download via yt-dlp (bukan direct URL)
+    if (platform === 'instagram') {
+      await processInstagramDownload(bot, chatId, msg.message_id, {
+        result,
+        url,
+        userId,
+      });
+      return;
+    }
+    
     await processDownload(bot, chatId, msg.message_id, {
       data,
       url,
@@ -258,6 +274,89 @@ async function processDownload(bot, chatId, msgId, opts) {
 
   } catch (err) {
     console.error('Download Error:', err.message);
+    await bot.sendMessage(chatId, `💥 Error: ${err.message}`, {
+      replyToMessage: msgId,
+    });
+  }
+}
+
+// ── Process Instagram Download ──────────────────────────
+
+async function processInstagramDownload(bot, chatId, msgId, opts) {
+  const { result, url, userId } = opts;
+
+  try {
+    const data = result.result || result;
+    const duration = data.duration || 0;
+
+    // Cek durasi
+    if (duration > 90) {
+      await bot.sendMessage(chatId,
+        `⚠️ Video ${duration}s melebihi batas FB Reels (90s).\nHanya download, tidak upload ke Facebook.`,
+        { replyToMessage: msgId }
+      );
+    }
+
+    const namafile = `ig_${Date.now()}`;
+    const downloadDir = path.resolve('./download');
+    const outputPath = path.resolve(downloadDir, `${namafile}.mp4`);
+
+    if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
+
+    await bot.sendMessage(chatId, '⬇️ Downloading dari Instagram via yt-dlp...', {
+      replyToMessage: msgId,
+    });
+
+    // Import instagram download function
+    const { downloadVideo: igDownload } = await import('./instagram-api.js');
+    await igDownload(url, outputPath);
+
+    // Cek file exists
+    if (!fs.existsSync(outputPath)) {
+      // Cari file yang mungkin nama berbeda
+      const files = fs.readdirSync(downloadDir).filter(f => f.startsWith(namafile));
+      if (files.length === 0) {
+        throw new Error('File tidak ditemukan setelah download');
+      }
+    }
+
+    const finalPath = fs.existsSync(outputPath) 
+      ? outputPath 
+      : path.join(downloadDir, fs.readdirSync(downloadDir).find(f => f.startsWith(namafile)));
+
+    // Kirim video ke Telegram
+    const caption = data.caption ? data.caption.substring(0, 1024) : '';
+    await bot.sendVideo(chatId, finalPath, {
+      caption: caption,
+      replyToMessage: msgId,
+    });
+
+    // Upload ke Reels (jika durasi <= 90s)
+    if (duration <= 90 && duration > 0) {
+      await bot.sendMessage(chatId, '📤 Mengupload ke Facebook Reels...', {
+        replyToMessage: msgId,
+      });
+
+      const upload = await uploadVideo(finalPath, '', caption);
+
+      if (upload.status === 'success') {
+        await bot.sendMessage(chatId, `🎉 ${upload.message}`, {
+          replyToMessage: msgId,
+        });
+      } else {
+        await bot.sendMessage(chatId, `⚠️ Upload Reels gagal: ${upload.message}`, {
+          replyToMessage: msgId,
+        });
+      }
+    }
+
+    if (userId) updateUserStats(userId);
+
+    // Cleanup file
+    try { fs.unlinkSync(finalPath); } catch {}
+
+  } catch (err) {
+    console.error('Instagram Download Error:', err.message);
     await bot.sendMessage(chatId, `💥 Error: ${err.message}`, {
       replyToMessage: msgId,
     });

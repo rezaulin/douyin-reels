@@ -7,10 +7,12 @@
  *   node index.js --batch urls.txt   # Batch mode
  *   node index.js --tiktok           # TikTok only
  *   node index.js --douyin           # Douyin only
+ *   node index.js --instagram         # Instagram only
  */
 
 import { DouyinDL } from './douyin-api.js';
 import { TikTokDL } from './tiktok-api.js';
+import { InstagramDL, downloadVideo as igDownload } from './instagram-api.js';
 import { uploadVideo, getPageInfo } from './fb-api.js';
 import { translate, translateCaption } from './translate.js';
 import axios from 'axios';
@@ -35,6 +37,7 @@ function detectPlatform(url) {
   url = url.trim().toLowerCase();
   if (url.includes('douyin.com') || url.includes('v.douyin.com')) return 'douyin';
   if (url.includes('tiktok.com') || url.includes('vt.tiktok.com') || url.includes('vm.tiktok.com')) return 'tiktok';
+  if (url.includes('instagram.com') || url.includes('instagr.am')) return 'instagram';
   return null;
 }
 
@@ -154,12 +157,36 @@ async function downloadAndUpload(url) {
     const platform = detectPlatform(url);
 
     if (!platform) {
-      console.log(chalk.red('❌ URL tidak valid. Gunakan URL dari Douyin atau TikTok.'));
+      console.log(chalk.red('❌ URL tidak valid. Gunakan URL dari Douyin, TikTok, atau Instagram.'));
       return;
     }
 
-    // 1. Fetch video data
-    console.log(chalk.blue(`\n🔍 Mengambil data dari ${platform === 'douyin' ? 'Douyin' : 'TikTok'}...`));
+    const platformNames = { douyin: 'Douyin', tiktok: 'TikTok', instagram: 'Instagram' };
+    console.log(chalk.blue(`\n🔍 Mengambil data dari ${platformNames[platform]}...`));
+
+    // Instagram: download langsung via yt-dlp
+    if (platform === 'instagram') {
+      const namafile = `ig_${Date.now()}`;
+      const downloadPath = path.resolve(CONFIG.downloadDir, `${namafile}.mp4`);
+
+      if (!fs.existsSync(CONFIG.downloadDir)) {
+        fs.mkdirSync(CONFIG.downloadDir, { recursive: true });
+      }
+
+      console.log(chalk.blue(`⬇️  Downloading dari Instagram via yt-dlp...`));
+      await igDownload(url, downloadPath);
+      console.log(chalk.green(`✅ Download selesai: ${downloadPath}`));
+
+      // Upload ke FB Reels
+      console.log(chalk.blue('\n📤 Mengupload ke Facebook Reels...'));
+      const upload = await uploadVideo(downloadPath, '', '');
+      if (upload.status === 'success') {
+        console.log(chalk.green(`🎉 ${upload.message}`));
+      } else {
+        console.log(chalk.yellow(`⚠️  Upload gagal: ${upload.message}`));
+      }
+      return;
+    }
 
     let result;
     if (platform === 'douyin') {

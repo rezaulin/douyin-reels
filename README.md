@@ -1,10 +1,11 @@
-# Douyin/TikTok → Facebook Reels Bot
+# Douyin/TikTok/Instagram → Facebook Reels Bot
 
-Bot Telegram untuk download video Douyin/TikTok tanpa watermark, auto-translate caption (China → English), dan upload otomatis ke Facebook Page Reels.
+Bot Telegram untuk download video Douyin/TikTok/Instagram tanpa watermark, auto-translate caption (China → English), dan upload otomatis ke Facebook Page Reels.
 
 ## Fitur
 
-- 📥 Download video Douyin & TikTok tanpa watermark
+- 📥 Download video Douyin, TikTok & Instagram tanpa watermark
+- 📸 Instagram Reels & Posts support (via yt-dlp + cookies)
 - 🌐 Auto-translate caption China → English
 - 🏷️ Auto-translate hashtags China → English
 - 📤 Auto-upload ke Facebook Page Reels (via Graph API)
@@ -16,10 +17,18 @@ Bot Telegram untuk download video Douyin/TikTok tanpa watermark, auto-translate 
 
 ## URL yang Didukung
 
+**Douyin:**
 - `https://v.douyin.com/xxxxx/`
 - `https://www.douyin.com/video/xxxxx`
+
+**TikTok:**
 - `https://vm.tiktok.com/xxxxx/`
 - `https://www.tiktok.com/@user/video/xxxxx`
+
+**Instagram:**
+- `https://www.instagram.com/reel/xxxxx/`
+- `https://www.instagram.com/p/xxxxx/`
+- `https://www.instagram.com/tv/xxxxx/`
 
 ---
 
