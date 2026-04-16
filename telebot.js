@@ -7,6 +7,7 @@ import { DouyinDL, downloadVideo } from './douyin-api.js';
 import { TikTokDL } from './tiktok-api.js';
 import { InstagramDL } from './instagram-api.js';
 import { uploadVideo, postPhoto } from './fb-api.js';
+import { uploadToTikTok } from './tiktok-upload.js';
 import { translateCaption } from './translate.js';
 import TeleBot from 'telebot';
 import axios from 'axios';
@@ -419,6 +420,7 @@ bot.on('video', async (msg) => {
   const keyboard = bot.inlineKeyboard([
     [bot.inlineButton('🎬 Upload ke FB Reels', { callback: `local:reels:${uploadId}` })],
     [bot.inlineButton('📄 Upload ke FB Page (Video)', { callback: `local:page:${uploadId}` })],
+    [bot.inlineButton('🎵 Upload ke TikTok', { callback: `local:tiktok:${uploadId}` })],
     [bot.inlineButton('❌ Batal', { callback: `local:cancel:${uploadId}` })],
   ]);
 
@@ -493,7 +495,7 @@ bot.on('callbackQuery', async (msg) => {
   // Handle local upload callbacks
   if (data && data.startsWith('local:')) {
     const parts = data.split(':');
-    const action = parts[1]; // reels, page, photo, cancel
+    const action = parts[1]; // reels, page, photo, tiktok, cancel
     const uploadId = parts.slice(2).join(':');
 
     const pending = pendingLocalUploads.get(uploadId);
@@ -622,6 +624,32 @@ bot.on('callbackQuery', async (msg) => {
           );
         } else {
           await bot.sendMessage(pending.chatId, '⚠️ Upload foto gagal.', {
+            replyToMessage: pending.msgId,
+          });
+        }
+      } else if (action === 'tiktok') {
+        // Upload video ke TikTok via browser automation
+        await bot.sendMessage(pending.chatId, '🎵 Mengupload video ke TikTok via browser...', {
+          replyToMessage: pending.msgId,
+        });
+
+        const caption = pending.caption || '';
+        const result = await uploadToTikTok(localPath, caption);
+
+        if (result.status === 'success') {
+          let msg = `🎉 ${result.message}`;
+          if (result.screenshot) {
+            await bot.sendPhoto(pending.chatId, result.screenshot, {
+              caption: msg,
+              replyToMessage: pending.msgId,
+            });
+          } else {
+            await bot.sendMessage(pending.chatId, msg, {
+              replyToMessage: pending.msgId,
+            });
+          }
+        } else {
+          await bot.sendMessage(pending.chatId, `⚠️ Upload TikTok gagal: ${result.message}`, {
             replyToMessage: pending.msgId,
           });
         }
